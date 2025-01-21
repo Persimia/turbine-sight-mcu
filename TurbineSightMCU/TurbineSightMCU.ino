@@ -11,7 +11,7 @@ const int AnalogPressurePin2 = 15;
 // Pressure related values
 const float Patm = 930.0;
 const float Pmin = 350.0;
-const float attachPressureThreshold = 400.0;
+const float attachPressureThreshold = 35.0;
 const float alpha = 0.1;
 float P1;
 float P2;
@@ -111,7 +111,7 @@ void updatePressure(){
   attachState = false;
   P1 = alpha * map(analogRead(AnalogPressurePin1),Pmin,Patm,40.0,0.0) + (1.0-alpha)*P1;
   P2 = alpha * map(analogRead(AnalogPressurePin2),Pmin,Patm,40.0,0.0) + (1.0-alpha)*P2;
-  if (P1 < attachPressureThreshold && P2 < attachPressureThreshold) {
+  if (P1 > attachPressureThreshold && P2 > attachPressureThreshold) {
     attachState = true;
     send_attached_msg();
   }
