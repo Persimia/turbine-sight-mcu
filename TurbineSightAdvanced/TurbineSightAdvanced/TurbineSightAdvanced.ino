@@ -3,8 +3,11 @@
 #include <unordered_map>
 
 // Pinout
-const int pump_control_H1_pin = 2;
-const int solenoid_control_H1_pin = 3;
+const int solenoid_control_I1_pin = 2;
+const int solenoid_control_I2_pin = 3;
+const int pump_control_I1_pin = 4;
+const int pump_control_I2_pin = 5;
+
 const int AnalogPressurePin1 = 14;
 const int AnalogPressurePin2 = 15;
 
@@ -176,23 +179,19 @@ void initDetach() {
 }
 
 void solenoidOn() { // releases vacuum
-  digitalWrite(solenoid_control_H1_pin, HIGH);
-  // digitalWrite(solenoid_control_H2_pin, LOW);
+  digitalWrite(solenoid_control_I1_pin, HIGH);
 }
 
 void solenoidOff() { // seals vacuum
-  digitalWrite(solenoid_control_H1_pin, LOW);
-  // digitalWrite(solenoid_control_H2_pin, LOW);
+  digitalWrite(solenoid_control_I1_pin, LOW);
 }
 
 void pumpOn() {
-  digitalWrite(pump_control_H1_pin, HIGH);
-  // digitalWrite(pump_control_H2_pin, LOW);
+  digitalWrite(pump_control_I1_pin, HIGH);
 }
 
 void pumpOff() {
-  digitalWrite(pump_control_H1_pin, LOW);
-  // digitalWrite(pump_control_H2_pin, LOW);
+  digitalWrite(pump_control_I1_pin, LOW);
 }
 
 void parseMavlinkInput() {
@@ -231,7 +230,7 @@ void sendHeartbeat() {
     mavlink_msg_heartbeat_pack(MAVLINK_SYS_ID, MAVLINK_COMP_ID, &msg, MAV_TYPE_GENERIC, MAV_AUTOPILOT_GENERIC, 0, 0, 0);
     uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
     Serial2.write(buf, len);
-    send_attached_msg();  // Send detach message via MAVLink
+    // send_attached_msg();  // Send detach message via MAVLink
     if (pressureReporting) {
       reportPressure();
     }
@@ -297,14 +296,17 @@ void ping() {
 //////////////////////////////////////////////////////////
 void setup() {
   // Setup switch input pin
-  pinMode(solenoid_control_H1_pin,OUTPUT);
-  pinMode(pump_control_H1_pin,OUTPUT);
+  pinMode(solenoid_control_I1_pin,OUTPUT);
+  pinMode(pump_control_I1_pin,OUTPUT);
   for (int i = 0; i < numStrips; i++) {
     pinMode(LED_R[i], OUTPUT);
     pinMode(LED_G[i], OUTPUT);
     pinMode(LED_B[i], OUTPUT);
     setColor(i, _lass_state_name);
   }
+
+  digitalWrite(solenoid_control_I2_pin, LOW);
+  digitalWrite(pump_control_I2_pin, LOW);
 
   pumpOff();
   solenoidOff();
