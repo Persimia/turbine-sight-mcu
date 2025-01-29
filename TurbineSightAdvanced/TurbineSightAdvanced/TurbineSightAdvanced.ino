@@ -18,7 +18,7 @@ const int LED_B[numStrips] = {11, 22};
 
 // Pressure related values
 const float Patm = 970.0;
-const float Pmin = 360.0;
+const float atmosphereThreshold = 930.0;
 const float attachPressureThreshold = 400.0;
 const float alpha = 0.1;
 float P1 = Patm;
@@ -258,6 +258,13 @@ void updatePressure(){
   attachState = false;
   P1 = alpha * analogRead(AnalogPressurePin1) + (1.0-alpha)*P1;
   P2 = alpha * analogRead(AnalogPressurePin2) + (1.0-alpha)*P2;
+
+  // Handle solenoid off after atmosphere reached
+  if (P1 > atmosphereThreshold && P2 > atmosphereThreshold) {
+    solenoidOff();
+  }
+
+  // Handle coastin LED colors
   if ( _lass_state_name != StateName::CoastIn) {return;}
   if (P1 < attachPressureThreshold) {
     setColor(0, StateName::CoastInSuctionOn);
