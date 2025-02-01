@@ -18,8 +18,9 @@ const int LED_B[numStrips] = {11, 22};
 
 // Pressure related values
 const float Patm = 970.0;
-const float atmosphereThreshold = 930.0;
-const float attachPressureThreshold = 400.0;
+const float atmosphereThreshold = 850.0;
+const float attachPressureThreshold = 500.0;
+const float detachPressureThreshold = 850.0; // Make these parameters?? 
 const float alpha = 0.1;
 float P1 = Patm;
 float P2 = Patm;
@@ -38,6 +39,11 @@ uint8_t colors[][3] = {
     {255, 0, 128},    // Rose (Recover) 8
     {0, 0, 0},        // Off (all LEDs off) 9
     {0, 255, 0},      // Green (CoastIn Suction) 10
+};
+
+enum class CupName : uint8_t {
+  Left = 0,
+  Right = 1
 };
 
 enum class StateName : uint8_t {
@@ -81,8 +87,9 @@ void handleAttach(uint8_t &value) {
   }
 }
 
-void setColor(uint8_t strip, StateName state) {
+void setColor(CupName cup, StateName state) {
   uint8_t color = static_cast<uint8_t>(state);
+  uint8_t strip = static_cast<uint8_t>(cup);
   analogWrite(LED_R[strip], colors[color][0]);
   analogWrite(LED_G[strip], colors[color][1]);
   analogWrite(LED_B[strip], colors[color][2]);
@@ -92,44 +99,45 @@ void handleLass(uint8_t &value) {
   _lass_state_name = static_cast<StateName>(value);
   switch (_lass_state_name){
     case StateName::Default: // Default
-      setColor(0, _lass_state_name);
-      setColor(1, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
+      setColor(CupName::Left, _lass_state_name);
       break;
     case StateName::Lass: // Lass
-      setColor(0, _lass_state_name);
-      setColor(1, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
+      setColor(CupName::Left, _lass_state_name);
       break;
     case StateName::LeadUp: // LeadUp
-      setColor(0, _lass_state_name);
-      setColor(1, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
+      setColor(CupName::Left, _lass_state_name);
       break;
     case StateName::CoastIn: // CoastIn
-      setColor(0, _lass_state_name);
-      setColor(1, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
+      setColor(CupName::Left, _lass_state_name);
       break;
     case StateName::WindDown: // WindDown
-      setColor(0, _lass_state_name);
-      setColor(1, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
+      setColor(CupName::Left, _lass_state_name);
       break;
     case StateName::Vegetable: // Vegetable
-      setColor(0, _lass_state_name);
-      setColor(1, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
+      setColor(CupName::Left, _lass_state_name);
       break;
     case StateName::WindUp: // WindUp
-      setColor(0, _lass_state_name);
-      setColor(1, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
+      setColor(CupName::Left, _lass_state_name);
       break;
     case StateName::CoastOut: // CoastOut
-      setColor(0, _lass_state_name);
-      setColor(1, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
+      setColor(CupName::Left, _lass_state_name);
       break;
     case StateName::Recover: // Recover
-      setColor(0, _lass_state_name);
-      setColor(1, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
+      setColor(CupName::Left, _lass_state_name);
+      solenoidOff();
       break;
     case StateName::Exited: // Exited
-      setColor(0, _lass_state_name);
-      setColor(1, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
+      setColor(CupName::Left, _lass_state_name);
       break;
     default:
       break;
@@ -230,7 +238,7 @@ void sendHeartbeat() {
     mavlink_msg_heartbeat_pack(MAVLINK_SYS_ID, MAVLINK_COMP_ID, &msg, MAV_TYPE_GENERIC, MAV_AUTOPILOT_GENERIC, 0, 0, 0);
     uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
     Serial2.write(buf, len);
-    // send_attached_msg();  // Send detach message via MAVLink
+    send_attached_msg();  // Send att_st message via MAVLink
     if (pressureReporting) {
       reportPressure();
     }
@@ -255,37 +263,37 @@ void send_attached_msg() {
 }
 
 void updatePressure(){
-  attachState = false;
   P1 = alpha * analogRead(AnalogPressurePin1) + (1.0-alpha)*P1;
   P2 = alpha * analogRead(AnalogPressurePin2) + (1.0-alpha)*P2;
 
-  // Handle solenoid off after atmosphere reached
-  if (P1 > atmosphereThreshold && P2 > atmosphereThreshold) {
-    solenoidOff();
+  if (P1 < attachPressureThreshold && P2 < attachPressureThreshold) {
+    if (!attachState) {
+      attachState = true;
+      send_attached_msg();
+    } 
+  }
+  if (P1 > detachPressureThreshold && P2 > detachPressureThreshold) {
+    if (attachState) {
+      attachState = false;
+      send_attached_msg();
+    }
   }
 
   // Handle coastin LED colors
   if ( _lass_state_name != StateName::CoastIn) {return;}
   if (P1 < attachPressureThreshold) {
-    setColor(0, StateName::CoastInSuctionOn);
+    setColor(CupName::Right, StateName::CoastInSuctionOn);
   }
   else {
-    setColor(0, StateName::CoastIn);
+    setColor(CupName::Right, StateName::CoastIn);
   }
   if (P2 < attachPressureThreshold) {
-    setColor(0, StateName::CoastInSuctionOn);
+    setColor(CupName::Left, StateName::CoastInSuctionOn);
   }
   else {
-    setColor(0, StateName::CoastIn);
+    setColor(CupName::Left, StateName::CoastIn);
   }
-  if (P1 < attachPressureThreshold && P2 < attachPressureThreshold) {
-    attachState = true;
-    send_attached_msg();
-  }
-  else {
-    attachState = false;
-    send_attached_msg();
-  }
+  
 }
 
 void reportPressure(){
@@ -309,7 +317,7 @@ void setup() {
     pinMode(LED_R[i], OUTPUT);
     pinMode(LED_G[i], OUTPUT);
     pinMode(LED_B[i], OUTPUT);
-    setColor(i, _lass_state_name);
+    setColor(static_cast<CupName>(i), _lass_state_name);
   }
 
   digitalWrite(solenoid_control_I2_pin, LOW);
