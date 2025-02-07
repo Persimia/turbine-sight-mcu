@@ -25,6 +25,7 @@ const float alpha = 0.1;
 float P1 = Patm;
 float P2 = Patm;
 bool pressureReporting = false;
+bool _color_test_enabled = false;
 
 // LED Color table
 uint8_t colors[][3] = {
@@ -61,6 +62,7 @@ enum class StateName : uint8_t {
 };
 
 StateName _lass_state_name = StateName::Exited;
+StateName _color_test_state_name = StateName::Exited;
 
 // MAVLink variables
 const uint8_t MAVLINK_SYS_ID = 1;
@@ -97,51 +99,8 @@ void setColor(CupName cup, StateName state) {
 
 void handleLass(uint8_t &value) {
   _lass_state_name = static_cast<StateName>(value);
-  switch (_lass_state_name){
-    case StateName::Default: // Default
-      setColor(CupName::Right, _lass_state_name);
-      setColor(CupName::Left, _lass_state_name);
-      break;
-    case StateName::Lass: // Lass
-      setColor(CupName::Right, _lass_state_name);
-      setColor(CupName::Left, _lass_state_name);
-      break;
-    case StateName::LeadUp: // LeadUp
-      setColor(CupName::Right, _lass_state_name);
-      setColor(CupName::Left, _lass_state_name);
-      break;
-    case StateName::CoastIn: // CoastIn
-      setColor(CupName::Right, _lass_state_name);
-      setColor(CupName::Left, _lass_state_name);
-      break;
-    case StateName::WindDown: // WindDown
-      setColor(CupName::Right, _lass_state_name);
-      setColor(CupName::Left, _lass_state_name);
-      break;
-    case StateName::Vegetable: // Vegetable
-      setColor(CupName::Right, _lass_state_name);
-      setColor(CupName::Left, _lass_state_name);
-      break;
-    case StateName::WindUp: // WindUp
-      setColor(CupName::Right, _lass_state_name);
-      setColor(CupName::Left, _lass_state_name);
-      break;
-    case StateName::CoastOut: // CoastOut
-      setColor(CupName::Right, _lass_state_name);
-      setColor(CupName::Left, _lass_state_name);
-      break;
-    case StateName::Recover: // Recover
-      setColor(CupName::Right, _lass_state_name);
-      setColor(CupName::Left, _lass_state_name);
-      solenoidOff();
-      break;
-    case StateName::Exited: // Exited
-      setColor(CupName::Right, _lass_state_name);
-      setColor(CupName::Left, _lass_state_name);
-      break;
-    default:
-      break;
-  }
+  setColor(CupName::Right, _lass_state_name);
+  setColor(CupName::Left, _lass_state_name);
 }
 
 void handleTest(uint8_t &value) {
@@ -150,21 +109,57 @@ void handleTest(uint8_t &value) {
       pumpOff();
       solenoidOff();
       pressureReporting = false;
+      _color_test_enabled = false;
+      setColor(CupName::Left, _lass_state_name);
+      setColor(CupName::Right, _lass_state_name);
       break;
     case 1: // comms check
-      ping();
+      pumpOn();
+      solenoidOn();
+      pressureReporting = true;
+      _color_test_enabled = true;
+      _color_test_state_name = StateName::Exited;
       break;
-    case 2: // test motor
+
+      break;
+    default:
+      break;
+  }
+}
+
+void handleMotor(uint8_t &value) {
+  switch (value){
+    case 0:
+      pumpOff();
+      break;
+    case 1: 
       pumpOn();
       break;
-    case 3: // test solenoid
+    default:
+      break;
+  }
+}
+
+void handleSolenoid(uint8_t &value) {
+  switch (value){
+    case 0: 
+      solenoidOff();
+      break;
+    case 1:
       solenoidOn();
       break;
-    case 4: // test pressure sensors
-      pressureReporting = true;
+    default:
       break;
-    case 5: // test LEDs
+  }
+}
 
+void handlePressure(uint8_t &value) {
+  switch (value){
+    case 0:
+      pressureReporting = false;
+      break;
+    case 1:
+      pressureReporting = true;
       break;
     default:
       break;
@@ -173,7 +168,10 @@ void handleTest(uint8_t &value) {
 std::unordered_map<std::string, void(*)(uint8_t &)> commandHandlers = {
     {"attach", handleAttach},
     {"lass", handleLass},
-    {"test", handleTest}
+    {"test", handleTest},
+    {"motor", handleMotor},
+    {"solenoid", handleSolenoid},
+    {"pressure", handlePressure},
 };
 
 void initAttach() {
@@ -241,6 +239,16 @@ void sendHeartbeat() {
     send_attached_msg();  // Send att_st message via MAVLink
     if (pressureReporting) {
       reportPressure();
+    }
+    if (_color_test_enabled) {
+      if (static_cast<uint8_t>(_color_test_state_name) + 1 > static_cast<uint8_t>(StateName::CoastInSuctionOn)) {
+          _color_test_state_name = StateName::Default; // Wrap around
+      } 
+      else {
+        _color_test_state_name = static_cast<StateName>(static_cast<uint8_t>(_color_test_state_name) + 1);
+      }
+      setColor(CupName::Right, _color_test_state_name);
+      setColor(CupName::Left, _color_test_state_name);
     }
     need_to_send_heartbeat = false;
   }
