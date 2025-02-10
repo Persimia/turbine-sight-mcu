@@ -18,9 +18,12 @@ const int LED_G[numStrips] = {10, 18};
 const int LED_B[numStrips] = {11, 22};
 
 // Pressure related values
-float Patm = 970.0;
-float attachPressureThreshold = 500.0;
-float detachPressureThreshold = 850.0;
+float Patm = 970.0f;
+float attachPressureThreshold = 500.0f;
+float detachPressureThreshold = 850.0f;
+const int pressureDisconnected = 10; // int because we are directly checking analogRead
+bool P1_disconnected = false;
+bool P2_disconnected = false;
 const uint8_t EEPROM_ADDR_BASE = 0;  // Base address in EEPROM
 
 const float alpha = 0.1;
@@ -309,6 +312,13 @@ void sendHeartbeat() {
       setColor(CupName::Right, _color_test_state_name);
       setColor(CupName::Left, _color_test_state_name);
     }
+    if (P1_disconnected) {
+      sendNVF("P1_dis", 1.0f);
+    }
+    if (P2_disconnected) {
+      sendNVF("P2_dis", 2.0f);
+    }
+
     need_to_send_heartbeat = false;
   }
 }
@@ -330,8 +340,19 @@ void send_attached_msg() {
 }
 
 void updatePressure(){
-  P1 = alpha * analogRead(AnalogPressurePin1) + (1.0-alpha)*P1;
-  P2 = alpha * analogRead(AnalogPressurePin2) + (1.0-alpha)*P2;
+  if (analogRead(AnalogPressurePin1) < pressureDisconnected) {
+    P1_disconnected = true;
+  } else {
+    P1 = alpha * (float)analogRead(AnalogPressurePin1) + (1.0-alpha)*P1;
+    P1_disconnected = false;
+  }
+
+  if (analogRead(AnalogPressurePin2) < pressureDisconnected) {
+    P2_disconnected = true;
+  } else {
+    P2 = alpha * (float)analogRead(AnalogPressurePin2) + (1.0-alpha)*P2;
+    P2_disconnected = false;
+  }
 
   if (P1 < attachPressureThreshold && P2 < attachPressureThreshold) {
     if (!attachState) {
