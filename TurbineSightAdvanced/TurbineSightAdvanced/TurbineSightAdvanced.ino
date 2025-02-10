@@ -1,6 +1,7 @@
 #include <MAVLink.h>
 #include <string>
 #include <unordered_map>
+#include <EEPROM.h>
 
 // Pinout
 const int solenoid_control_I1_pin = 2;
@@ -17,10 +18,11 @@ const int LED_G[numStrips] = {10, 18};
 const int LED_B[numStrips] = {11, 22};
 
 // Pressure related values
-const float Patm = 970.0;
-const float atmosphereThreshold = 850.0;
-const float attachPressureThreshold = 500.0;
-const float detachPressureThreshold = 850.0; // Make these parameters?? 
+float Patm = 970.0;
+float attachPressureThreshold = 500.0;
+float detachPressureThreshold = 850.0;
+const uint8_t EEPROM_ADDR_BASE = 0;  // Base address in EEPROM
+
 const float alpha = 0.1;
 float P1 = Patm;
 float P2 = Patm;
@@ -40,6 +42,12 @@ uint8_t colors[][3] = {
     {255, 0, 128},    // Rose (Recover) 8
     {0, 0, 0},        // Off (all LEDs off) 9
     {0, 255, 0},      // Green (CoastIn Suction) 10
+};
+
+enum class PressureEEPROMIdx : uint8_t {
+  Patm = 0,
+  attachPressureThreshold = 1,
+  detachPressureThreshold = 2
 };
 
 enum class CupName : uint8_t {
@@ -76,7 +84,37 @@ volatile bool attachState = false; // Store the current switch state
 // State handlers
 volatile bool need_to_send_heartbeat = false;
 const float EPSILON = 1e-6;
-void handleAttach(uint8_t &value) {
+
+// Function to save a float at a specific index (0, 1, or 2)
+void saveFloatToEEPROM(PressureEEPROMIdx index_enum, float value) {
+  uint8_t index = static_cast<uint8_t>(index_enum);
+  if (index < 0 || index > 2) return;  // Prevent out-of-bounds access
+  int address = EEPROM_ADDR_BASE + index * sizeof(float);
+  EEPROM.put(address, value);
+}
+
+// Function to read a float from a specific index (0, 1, or 2)
+void readFloatFromEEPROM(PressureEEPROMIdx index_enum, float &current_value) {
+  uint8_t index = static_cast<uint8_t>(index_enum);
+  if (index < 0 || index > 2) return;  // Return default value if out of bounds
+  int address = EEPROM_ADDR_BASE + index * sizeof(float);
+  float value;
+  EEPROM.get(address, value);
+  if (!isnan(value)){
+    current_value = value;
+  }
+}
+
+void setColor(CupName cup, StateName state) {
+  uint8_t color = static_cast<uint8_t>(state);
+  uint8_t strip = static_cast<uint8_t>(cup);
+  analogWrite(LED_R[strip], colors[color][0]);
+  analogWrite(LED_G[strip], colors[color][1]);
+  analogWrite(LED_B[strip], colors[color][2]);
+}
+
+void handleAttach(float &value_f) {
+  uint8_t value = (uint8_t)value_f;
   switch (value){
     case 0:
       initDetach();
@@ -89,21 +127,15 @@ void handleAttach(uint8_t &value) {
   }
 }
 
-void setColor(CupName cup, StateName state) {
-  uint8_t color = static_cast<uint8_t>(state);
-  uint8_t strip = static_cast<uint8_t>(cup);
-  analogWrite(LED_R[strip], colors[color][0]);
-  analogWrite(LED_G[strip], colors[color][1]);
-  analogWrite(LED_B[strip], colors[color][2]);
-}
-
-void handleLass(uint8_t &value) {
+void handleLass(float &value_f) {
+  uint8_t value = (uint8_t)value_f;
   _lass_state_name = static_cast<StateName>(value);
   setColor(CupName::Right, _lass_state_name);
   setColor(CupName::Left, _lass_state_name);
 }
 
-void handleTest(uint8_t &value) {
+void handleTest(float &value_f) {
+  uint8_t value = (uint8_t)value_f;
   switch (value){
     case 0: // disable test mode
       pumpOff();
@@ -127,7 +159,8 @@ void handleTest(uint8_t &value) {
   }
 }
 
-void handleMotor(uint8_t &value) {
+void handleMotor(float &value_f) {
+  uint8_t value = (uint8_t)value_f;
   switch (value){
     case 0:
       pumpOff();
@@ -140,7 +173,8 @@ void handleMotor(uint8_t &value) {
   }
 }
 
-void handleSolenoid(uint8_t &value) {
+void handleSolenoid(float &value_f) {
+  uint8_t value = (uint8_t)value_f;
   switch (value){
     case 0: 
       solenoidOff();
@@ -153,7 +187,8 @@ void handleSolenoid(uint8_t &value) {
   }
 }
 
-void handlePressure(uint8_t &value) {
+void handlePressure(float &value_f) {
+  uint8_t value = (uint8_t)value_f;
   switch (value){
     case 0:
       pressureReporting = false;
@@ -165,13 +200,37 @@ void handlePressure(uint8_t &value) {
       break;
   }
 }
-std::unordered_map<std::string, void(*)(uint8_t &)> commandHandlers = {
+
+void handleSet_p_atm(float &value_f) {
+  Patm = value_f;
+  saveFloatToEEPROM(PressureEEPROMIdx::Patm, Patm);
+}
+
+void handleSet_p_att(float &value_f) {
+  attachPressureThreshold = value_f;
+  saveFloatToEEPROM(PressureEEPROMIdx::attachPressureThreshold, attachPressureThreshold);
+}
+
+void handleSet_p_det(float &value_f) {
+  detachPressureThreshold = value_f;
+  saveFloatToEEPROM(PressureEEPROMIdx::detachPressureThreshold, detachPressureThreshold);
+}
+
+void handleGet_p_thresh(float &value_f) {
+  reportPressureThresholds();
+}
+
+std::unordered_map<std::string, void(*)(float &)> commandHandlers = {
     {"attach", handleAttach},
     {"lass", handleLass},
     {"test", handleTest},
     {"motor", handleMotor},
     {"solenoid", handleSolenoid},
     {"pressure", handlePressure},
+    {"set_p_atm", handleSet_p_atm},
+    {"set_p_att", handleSet_p_att},
+    {"set_p_det", handleSet_p_det},
+    {"get_p_lims", handleGet_p_thresh}
 };
 
 void initAttach() {
@@ -214,7 +273,7 @@ void parseMavlinkInput() {
           // Handle attach or detach commands (can be expanded)
           mavlink_named_value_float_t msg_struct;
           mavlink_msg_named_value_float_decode(&received_msg, &msg_struct);
-          uint8_t value = (uint8_t)msg_struct.value;
+          float value = msg_struct.value;
           auto it = commandHandlers.find(msg_struct.name);
           if (it != commandHandlers.end()) {it->second(value); sendNVF("ACK", value);} 
           else {} // unknown command
@@ -309,6 +368,12 @@ void reportPressure(){
   sendNVF("suction2", P2);
 }
 
+void reportPressureThresholds(){
+  sendNVF("p_atm", Patm);
+  sendNVF("p_att", attachPressureThreshold);
+  sendNVF("p_det", detachPressureThreshold);
+}
+
 void ping() {
   sendNVF("ping", 69.0f);
 }
@@ -318,6 +383,10 @@ void ping() {
 //////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////
 void setup() {
+  readFloatFromEEPROM(PressureEEPROMIdx::Patm, Patm);
+  readFloatFromEEPROM(PressureEEPROMIdx::attachPressureThreshold, attachPressureThreshold);
+  readFloatFromEEPROM(PressureEEPROMIdx::detachPressureThreshold, detachPressureThreshold);
+
   // Setup switch input pin
   pinMode(solenoid_control_I1_pin,OUTPUT);
   pinMode(pump_control_I1_pin,OUTPUT);
